@@ -47,8 +47,10 @@ select
     case when has_table_privilege('anon', c.oid, 'select') then 'anon' end,
     case when has_table_privilege('authenticated', c.oid, 'select') then 'authenticated' end) as can_read,
   case
-    when not c.relrowsecurity and (has_table_privilege('anon', c.oid, 'select') or has_table_privilege('authenticated', c.oid, 'select'))
+    when not c.relrowsecurity and has_table_privilege('anon', c.oid, 'select')
       then 'OPEN: anyone with your public key can read it. Turn on RLS and add policies'
+    when not c.relrowsecurity and has_table_privilege('authenticated', c.oid, 'select')
+      then 'OPEN TO LOGGED-IN USERS: anyone who signs in can read every row. Turn on RLS and add policies'
     when not c.relrowsecurity
       then 'NO RLS, not reachable yet: turn on RLS before you grant anything'
     when not has_table_privilege('anon', c.oid, 'select') and not has_table_privilege('authenticated', c.oid, 'select')
@@ -66,6 +68,7 @@ order by c.relname;
 | Verdict | What to do |
 |---------|------------|
 | `OPEN` | Urgent. Turn on RLS and add owner-only policies (see below). |
+| `OPEN TO LOGGED-IN USERS` | Urgent if anyone can sign up. Every signed-in user can read every row. Turn on RLS and add owner-only policies. |
 | `42501` | Add the grants below. Your app is broken for this table, not exposed. |
 | `NO RLS, not reachable yet` | Turn on RLS **first**. The usual 42501 fix would make it `OPEN`. |
 | `NO POLICIES` | Add policies, or your app sees an empty table. |
@@ -73,13 +76,10 @@ order by c.relname;
 
 ### Fix a 42501 table safely
 
-Grant only what each role needs, then RLS, then policies. This is the order Supabase recommends. Replace `invoices` and `user_id` with your table and its owner column.
+Lock first, then open: turn on RLS and add policies, then grant only what each role needs, all in one transaction. The table is never open, even for a moment, and if anything fails halfway, nothing changes. Replace `invoices` and `user_id` with your table and its owner column. If the table already has policies, leave out the two `create policy` lines.
 
 ```sql
-grant select, insert, update, delete on public.invoices to authenticated;
-grant select, insert, update, delete on public.invoices to service_role;
--- Only if visitors who are NOT logged in must read it:
--- grant select on public.invoices to anon;
+begin;
 
 alter table public.invoices enable row level security;
 
@@ -87,6 +87,13 @@ create policy "Owners read their invoices" on public.invoices
   for select to authenticated using ((select auth.uid()) = user_id);
 create policy "Owners add their invoices" on public.invoices
   for insert to authenticated with check ((select auth.uid()) = user_id);
+
+grant select, insert, update, delete on public.invoices to authenticated;
+grant select, insert, update, delete on public.invoices to service_role;
+-- Only if visitors who are NOT logged in must read it:
+-- grant select on public.invoices to anon;
+
+commit;
 ```
 
 - **`serial` / `bigserial` ids:** adding rows also needs `grant usage, select on sequence public.invoices_id_seq to authenticated;`. Without it you get "permission denied for sequence".
@@ -151,4 +158,4 @@ This free check covers 5 things. [Ship Kit](https://poofylabs.dev/?from=gh-readm
 
 ---
 
-Made by Poofy Labs. Not affiliated with Supabase, Lovable, Bolt, Cursor, Anthropic or Stripe. MIT licensed: read it, fork it, run it.
+Made by Kumo LLC. Not affiliated with Supabase, Lovable, Bolt, Cursor, Anthropic or Stripe. MIT licensed: read it, fork it, run it.
