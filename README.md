@@ -158,4 +158,4 @@ This free check covers 5 things. [Ship Kit](https://poofylabs.dev/?from=gh-readm
 
 ---
 
-Made by Kumo LLC. Not affiliated with Supabase, Lovable, Bolt, Cursor, Anthropic or Stripe. MIT licensed: read it, fork it, run it.
+Made by Poofy Labs. Not affiliated with Supabase, Lovable, Bolt, Cursor, Anthropic or Stripe. MIT licensed: read it, fork it, run it.
